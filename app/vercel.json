@@ -1,0 +1,12 @@
+{
+    "rewrites": [
+        {
+            "source": "/bapi/:path*",
+            "destination": "https://www.binance.com/bapi/:path*"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
+}
