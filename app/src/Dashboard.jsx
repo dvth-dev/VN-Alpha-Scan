@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import TokenIcon from './TokenIcon';
 import { Search, Activity } from 'lucide-react';
 
 function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, onSearch }) {
+    if (tokens && tokens.length > 0) console.log('First Token Data:', tokens[0]);
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -162,6 +164,12 @@ function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, o
                                         {/* Header: Rank + Symbol */}
                                         <div className="flex items-start justify-between mb-3">
                                             <div className="flex items-center gap-3">
+                                                <TokenIcon
+                                                    iconUrl={token.iconUrl}
+                                                    symbol={token.symbol}
+                                                    size="md"
+                                                    className="p-0.5"
+                                                />
                                                 <div>
                                                     <div className="text-base font-bold text-white group-hover:text-blue-300 transition-colors">
                                                         {token.symbol || 'N/A'}
@@ -189,7 +197,7 @@ function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, o
 
                                             {/* Volume Today */}
                                             <div className="flex justify-between items-center">
-                                                <div className="text-xs text-slate-500">Volume Hôm nay (từ 7h)</div>
+                                                <div className="text-xs text-slate-500">Volume Từ 7h00 đến Now</div>
                                                 <div className="text-sm font-bold text-emerald-400">
                                                     {formatVolume(volToday)}
                                                 </div>

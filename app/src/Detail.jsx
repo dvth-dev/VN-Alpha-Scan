@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { fetchTokenList, fetchTicker, getDailyVolumeStats, fetchKlines } from './api';
+import TokenIcon from './TokenIcon';
 import { ArrowLeft, TrendingUp, TrendingDown, Activity, Clock, Calendar, Calculator } from 'lucide-react';
 
 const formatCurrency = (val) => {
@@ -187,6 +188,13 @@ function Detail() {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
 
                         <div className="flex items-center gap-4">
+                            <TokenIcon
+                                iconUrl={token.iconUrl}
+                                symbol={token.symbol}
+                                size="lg"
+                                className="p-1 shadow-2xl shadow-blue-500/10"
+                            />
+
                             <div>
                                 <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
                                     {token.symbol}
