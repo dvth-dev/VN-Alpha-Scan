@@ -108,10 +108,7 @@ function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, o
                             ))}
                         </div>
 
-                        {/* Progress Text Helper */}
-                        <p className="text-center text-slate-500 text-sm animate-pulse pt-4">
-                            Đang đồng bộ dữ liệu... {total > 0 ? Math.round((progress / total) * 100) : 0}%
-                        </p>
+
                     </div>
                 ) : (
                     <div className="space-y-6">
