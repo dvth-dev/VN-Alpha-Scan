@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import Detail from './Detail';
+import AdminDashboard from './admin/AdminDashboard';
 import { fetchTokenList, fetchAllData } from './api';
 
 function App() {
@@ -170,6 +171,7 @@ function App() {
           />
         } />
         <Route path="/token/:alphaId" element={<Detail />} />
+        <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </BrowserRouter>
   );
