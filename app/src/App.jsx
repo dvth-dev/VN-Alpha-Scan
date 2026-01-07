@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import Detail from './Detail';
 import AdminDashboard from './admin/AdminDashboard';
@@ -61,9 +61,35 @@ function App() {
     setLoadingInitial(false);
   };
 
-  useEffect(() => {
-    initialLoad();
-  }, []);
+  // Placeholder for content that needs location context
+  const AppContent = () => {
+    const location = useLocation();
+    const isAdmin = location.pathname.startsWith('/admin');
+
+    useEffect(() => {
+      if (!isAdmin) {
+        initialLoad();
+      }
+    }, [isAdmin]);
+
+    return (
+      <Routes>
+        <Route path="/" element={
+          <Dashboard
+            tokens={displayedTokens}
+            loading={loadingInitial}
+            progress={initProgress}
+            total={initTotal}
+            lastUpdated={lastUpdated}
+            onRefresh={initialLoad}
+            onSearch={handleSearch}
+          />
+        } />
+        <Route path="/token/:alphaId" element={<Detail />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+      </Routes>
+    );
+  };
 
   // Auto Refresh Logic: Refresh displayed tokens every 30 seconds
   useEffect(() => {
@@ -158,21 +184,7 @@ function App() {
 
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/" element={
-          <Dashboard
-            tokens={displayedTokens}
-            loading={loadingInitial}
-            progress={initProgress}
-            total={initTotal}
-            lastUpdated={lastUpdated}
-            onRefresh={initialLoad}
-            onSearch={handleSearch}
-          />
-        } />
-        <Route path="/token/:alphaId" element={<Detail />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-      </Routes>
+      <AppContent />
     </HashRouter>
   );
 }

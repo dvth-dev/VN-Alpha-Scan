@@ -62,6 +62,7 @@ const AdminDashboard = () => {
     }, [notification]);
 
     const fetchStats = async () => {
+        if (!isAuthenticated) return;
         setLoading(true);
         try {
             // 1. Fetch from Binance

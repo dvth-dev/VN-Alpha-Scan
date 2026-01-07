@@ -5,7 +5,7 @@ export default async function handler(req, res) {
 
     try {
         const { password } = req.body;
-        const correctPass = process.env.PRIVATE_PASS || 'admin123';
+        const correctPass = process.env.PRIVATE_PASS;
 
         if (password === correctPass) {
             return res.status(200).json({
