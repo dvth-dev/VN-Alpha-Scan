@@ -48,8 +48,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ message: 'Symbols array required' });
     }
 
-    // Limit to 20 per batch to avoid timeouts
-    const batch = symbols.slice(0, 20);
+    // Limit to 50 per batch to avoid timeouts
+    const batch = symbols.slice(0, 50);
 
     try {
         // Fetch all in parallel on server

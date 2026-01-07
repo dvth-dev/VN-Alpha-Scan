@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
     try {
         const data = req.body;
-        const { alphaId, startTime, endTime } = data;
+        const { alphaId, startTime, endTime, winningSpots } = data;
 
         if (!alphaId) {
             return res.status(400).json({ message: 'Missing alphaId' });
@@ -18,15 +18,20 @@ export default async function handler(req, res) {
         const db = client.db(process.env.MONGODB_DB);
         const collection = db.collection('tokens_competition');
 
+        // Chuẩn bị object update
+        const updateFields = {
+            updatedAt: new Date()
+        };
+
+        if (startTime) updateFields.startTime = new Date(startTime);
+        if (endTime) updateFields.endTime = new Date(endTime);
+        if (winningSpots) updateFields.winningSpots = parseInt(winningSpots);
+
         // Thực hiện update dựa trên alphaId
         const result = await collection.updateOne(
             { alphaId: alphaId },
             {
-                $set: {
-                    startTime: startTime ? new Date(startTime) : null,
-                    endTime: endTime ? new Date(endTime) : null,
-                    updatedAt: new Date()
-                }
+                $set: updateFields
             }
         );
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Search, Loader2, Trash2, AlertCircle, X, Calendar, Clock } from 'lucide-react';
+import { Trophy, Search, Loader2, Trash2, AlertCircle, X, Calendar, Users } from 'lucide-react';
 import { fetchTokenList } from '../api';
 import axios from 'axios';
 
@@ -13,13 +13,11 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
     const [selectedToken, setSelectedToken] = useState(null);
     const [competitionForm, setCompetitionForm] = useState({
         startDateTime: '',
-        endDateTime: ''
+        endDateTime: '',
+        winningSpots: ''
     });
 
     const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '' }
-
-    // Dữ liệu đã được fetch từ component cha AdminDashboard
-    // Không cần fetch lại ở đây
 
     useEffect(() => {
         if (notification) {
@@ -40,10 +38,11 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
             };
             setCompetitionForm({
                 startDateTime: formatForInput(start),
-                endDateTime: formatForInput(end)
+                endDateTime: formatForInput(end),
+                winningSpots: existing.winningSpots || ''
             });
         } else {
-            setCompetitionForm({ startDateTime: '', endDateTime: '' });
+            setCompetitionForm({ startDateTime: '', endDateTime: '', winningSpots: '' });
         }
         setIsModalOpen(true);
     };
@@ -59,7 +58,6 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
                 setIsModalOpen(false);
                 setNotification({ type: 'success', message: `Deleted competition for ${selectedToken.symbol}` });
 
-                // Cập nhật lại stats ở Dashboard cha
                 if (refreshStats) refreshStats();
             }
         } catch (error) {
@@ -71,9 +69,9 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
     };
 
     const handleConfirm = async () => {
-        const { startDateTime, endDateTime } = competitionForm;
-        if (!startDateTime || !endDateTime) {
-            alert("Please fill in both start and end date-time!");
+        const { startDateTime, endDateTime, winningSpots } = competitionForm;
+        if (!startDateTime || !endDateTime || !winningSpots) {
+            alert("Please fill in Start Date, End Date, and Winning Spots!");
             return;
         }
 
@@ -82,6 +80,11 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
 
         if (endTimestamp <= startTimestamp) {
             alert("End time must be after start time!");
+            return;
+        }
+
+        if (parseInt(winningSpots) <= 0) {
+            alert("Winning Spots must be a positive number!");
             return;
         }
 
@@ -94,10 +97,10 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
                 iconUrl: selectedToken.iconUrl || '',
                 startTime: startTimestamp,
                 endTime: endTimestamp,
+                winningSpots: parseInt(winningSpots),
                 updatedAt: new Date()
             };
 
-            // Determine which API to call
             const endpoint = dbCompetitions[selectedToken.alphaId]
                 ? '/api/update-competition'
                 : '/api/save-competition';
@@ -107,9 +110,8 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
             if (response.data && response.data.code === '000000') {
                 setNotification({ type: 'success', message: `Successfully registered competition for ${selectedToken.symbol}!` });
                 setIsModalOpen(false);
-                setCompetitionForm({ startDateTime: '', endDateTime: '' });
+                setCompetitionForm({ startDateTime: '', endDateTime: '', winningSpots: '' });
 
-                // Cập nhật lại stats ở Dashboard cha
                 if (refreshStats) refreshStats();
             } else {
                 throw new Error(response.data.message || 'Failed to save');
@@ -293,6 +295,22 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
                                         </div>
                                     </div>
                                 </div>
+
+                                <div className="space-y-2">
+                                    <div className="relative group/input">
+                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                                            <Users className="text-white group-focus-within/input:text-indigo-400 transition-colors" size={16} />
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Top Users</span>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            placeholder="Enter number of winners (e.g. 500)"
+                                            className="bg-slate-900 border border-slate-800 rounded-2xl pl-28 pr-4 py-4 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all w-full appearance-none placeholder:text-slate-700"
+                                            value={competitionForm.winningSpots}
+                                            onChange={(e) => setCompetitionForm({ ...competitionForm, winningSpots: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="bg-indigo-500/5 border border-indigo-500/10 p-4 rounded-2xl">
@@ -322,8 +340,10 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
                             </button>
                             <button
                                 onClick={handleConfirm}
-                                className="flex-[2] py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+                                disabled={loading}
+                                className="flex-[2] py-3 px-4 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
+                                {loading && <Loader2 className="animate-spin" size={16} />}
                                 {dbCompetitions[selectedToken?.alphaId] ? 'Update' : 'Confirm Check-in'}
                             </button>
                         </div>

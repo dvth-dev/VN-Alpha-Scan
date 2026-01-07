@@ -31,7 +31,7 @@ function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, o
     };
 
     const handleRowClick = (token) => {
-        navigate(`/token/${token.alphaId}`);
+        navigate(`/token/${token.alphaId}`, { state: { tokenData: token } });
     };
 
     return (
