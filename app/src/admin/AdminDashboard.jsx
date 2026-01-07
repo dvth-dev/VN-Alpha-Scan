@@ -5,7 +5,7 @@ import AdminLayout from './AdminLayout';
 import Competitions from './Competitions';
 import { fetchTokenList } from '../api';
 
-const AdminDashboard = () => {
+const AdminDashboard = ({ tokens = [] }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [recentCompetitions, setRecentCompetitions] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -17,13 +17,20 @@ const AdminDashboard = () => {
         { label: 'Live Now', value: '0', change: '0%', trend: 'up', icon: <Activity size={20} className="text-purple-400" />, color: 'purple' },
         { label: 'System Status', value: 'Active', change: '100%', trend: 'up', icon: <TrendingUp size={20} className="text-indigo-400" />, color: 'indigo' },
     ]);
-    const [allTokens, setAllTokens] = useState([]);
+    const [allTokens, setAllTokens] = useState(tokens);
     const [dbCompetitionsMap, setDbCompetitionsMap] = useState({}); // alphaId -> competition data
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [password, setPassword] = useState('');
     const [loginError, setLoginError] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
     const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '' }
+
+    // Update allTokens if props change
+    useEffect(() => {
+        if (tokens && tokens.length > 0) {
+            setAllTokens(tokens);
+        }
+    }, [tokens]);
 
     useEffect(() => {
         const auth = localStorage.getItem('admin_authenticated');
@@ -65,9 +72,11 @@ const AdminDashboard = () => {
         if (!isAuthenticated) return;
         setLoading(true);
         try {
-            // 1. Fetch from Binance
-            const binanceData = await fetchTokenList();
-            setAllTokens(binanceData);
+            // 1. Fetch from Binance ONLY if not provided via props
+            if (allTokens.length === 0) {
+                const binanceData = await fetchTokenList();
+                setAllTokens(binanceData);
+            }
 
             // 2. Fetch from MongoDB
             const mongoRes = await axios.get('/api/competitions');

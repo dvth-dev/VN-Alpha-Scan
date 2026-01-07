@@ -1,24 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import Detail from './Detail';
 import AdminDashboard from './admin/AdminDashboard';
-import { fetchTokenList, fetchAllData } from './api';
+import { fetchTokenList, fetchAllData, fetchBatchDetails } from './api';
 
-function App() {
+function MainContent() {
   const [allBasicTokens, setAllBasicTokens] = useState([]); // Stores plain list of all tokens
   const [tokenDetails, setTokenDetails] = useState({}); // Stores expanded data: { [alphaId]: { ticker, volumeStats } }
-
+  const [dbCompetitions, setDbCompetitions] = useState({}); // Stores competition data from MongoDB
   const [displayedTokens, setDisplayedTokens] = useState([]); // List to pass to Dashboard
   const [loadingInitial, setLoadingInitial] = useState(true);
-
-  // Progress tracking for initial load
   const [initProgress, setInitProgress] = useState(0);
   const [initTotal, setInitTotal] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Helper to update store
-  const updateStore = (items) => {
+  const location = useLocation();
+  const isAdmin = location.pathname.startsWith('/admin');
+
+  // Helper to re-calculate display list order (Internal version to avoid dependency loops)
+  const sortTokens = (tokensWithDetails, compsMap) => {
+    return [...tokensWithDetails].sort((a, b) => {
+      const aComp = compsMap[a.alphaId];
+      const bComp = compsMap[b.alphaId];
+      const now = new Date();
+      const aIsActive = aComp && now >= new Date(aComp.startTime) && now <= new Date(aComp.endTime);
+      const bIsActive = bComp && now >= new Date(bComp.startTime) && now <= new Date(bComp.endTime);
+      if (aIsActive && !bIsActive) return -1;
+      if (!aIsActive && bIsActive) return 1;
+      const aVol = a.volumeStats?.volToday || 0;
+      const bVol = b.volumeStats?.volToday || 0;
+      return bVol - aVol;
+    });
+  };
+
+  const getSortedDisplayList = useCallback((tokensWithDetails) => {
+    return sortTokens(tokensWithDetails, dbCompetitions);
+  }, [dbCompetitions]);
+  const updateStore = useCallback((items) => {
     setTokenDetails(prev => {
       const next = { ...prev };
       items.forEach(item => {
@@ -32,95 +51,79 @@ function App() {
       return next;
     });
     setLastUpdated(new Date());
-  };
+  }, []);
 
   // Initial Load: List + Top 20 Details
-  const initialLoad = async () => {
+  const initialLoad = useCallback(async () => {
     setLoadingInitial(true);
     setInitProgress(0);
 
-    // 1. Fetch Full List
     const list = await fetchTokenList();
     if (list.length === 0) {
       setLoadingInitial(false);
       return;
     }
     setAllBasicTokens(list);
-    setInitTotal(20); // Focus on first 20
 
-    // 2. Fetch Details for Top 20 (as default view)
-    const initialBatch = list.slice(0, 25); // Fetch a few more to be safe
-    let completed = 0;
+    // Fetch Competitions
+    let compMap = {};
+    try {
+      const res = await fetch('/api/competitions').then(r => r.json());
+      if (res.code === '000000') {
+        res.data.forEach(c => compMap[c.alphaId] = c);
+        setDbCompetitions(compMap);
+      }
+    } catch (e) { console.error(e); }
 
-    const details = await fetchAllData(initialBatch, () => {
-      completed++;
-      if (completed <= 20) setInitProgress(completed);
+    // If not in admin, show placeholders then batch
+    if (isAdmin) {
+      setLoadingInitial(false);
+      return;
+    }
+
+    // Identify Competition Tokens to prioritize
+    const compAlphaIds = Object.keys(compMap);
+    const compTokens = list.filter(t => compAlphaIds.includes(t.alphaId));
+    const nonCompTokens = list.filter(t => !compAlphaIds.includes(t.alphaId));
+
+    // Create a prioritized list for the initial batch (Comp tokens + top Binance tokens)
+    // We fetch up to 25 to be safe
+    const prioritizedList = [...compTokens, ...nonCompTokens.slice(0, Math.max(0, 25 - compTokens.length))];
+
+    // Show placeholders for the prioritized list
+    setDisplayedTokens(prioritizedList.map(t => ({ ...t, _isLoading: true })));
+
+    setInitTotal(prioritizedList.length);
+    const batchStats = await fetchBatchDetails(prioritizedList);
+
+    // Convert map to items format with competition data
+    const details = Object.keys(batchStats).map(id => {
+      const basic = list.find(t => t.alphaId === id);
+      return {
+        ...basic,
+        ...batchStats[id],
+        competition: compMap[id],
+        _isLoading: false
+      };
     });
 
+    // Sort immediately before setting
+    setDisplayedTokens(sortTokens(details, compMap));
     updateStore(details);
+    setInitProgress(prioritizedList.length);
     setLoadingInitial(false);
-  };
-
-  // Placeholder for content that needs location context
-  const AppContent = () => {
-    const location = useLocation();
-    const isAdmin = location.pathname.startsWith('/admin');
-
-    useEffect(() => {
-      if (!isAdmin) {
-        initialLoad();
-      }
-    }, [isAdmin]);
-
-    return (
-      <Routes>
-        <Route path="/" element={
-          <Dashboard
-            tokens={displayedTokens}
-            loading={loadingInitial}
-            progress={initProgress}
-            total={initTotal}
-            lastUpdated={lastUpdated}
-            onRefresh={initialLoad}
-            onSearch={handleSearch}
-          />
-        } />
-        <Route path="/token/:alphaId" element={<Detail />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-      </Routes>
-    );
-  };
-
-  // Auto Refresh Logic: Refresh displayed tokens every 30 seconds
-  useEffect(() => {
-    const intervalId = setInterval(async () => {
-      if (displayedTokens.length > 0 && !loadingInitial) {
-        const tokensToRefresh = displayedTokens.filter(t => !t._isLoading);
-        if (tokensToRefresh.length === 0) return;
-
-        // Silent fetch
-        const fetchedData = await fetchAllData(tokensToRefresh); // No progress callback needed for background sync
-        updateStore(fetchedData);
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(intervalId);
-  }, [displayedTokens, loadingInitial]);
-
+  }, [updateStore, isAdmin]);
 
   // Handler search from Dashboard
-  const handleSearch = async (term) => {
-    // 1. Filter from basic list
+  const handleSearch = useCallback(async (term) => {
     if (!term.trim()) {
-      // If empty, show top 20 (sorted by volume from what we have)
       const allLoaded = Object.keys(tokenDetails).map(id => {
         const basic = allBasicTokens.find(t => t.alphaId === id);
         if (!basic) return null;
-        return { ...basic, ...tokenDetails[id] };
+        return { ...basic, ...tokenDetails[id], competition: dbCompetitions[id] };
       }).filter(Boolean);
 
-      const sorted = allLoaded.sort((a, b) => b.volumeStats.volToday - a.volumeStats.volToday).slice(0, 20);
-      setDisplayedTokens(sorted);
+      setDisplayedTokens(getSortedDisplayList(allLoaded).slice(0, 20));
       return;
     }
 
@@ -131,60 +134,83 @@ function App() {
       t.alphaId?.toLowerCase().includes(lower)
     );
 
-    // Limit results to 20 for performance
-    const results = textMatches.slice(0, 20);
+    const results = textMatches.slice(0, 40);
+    const tempDisplay = results.map(t => ({
+      ...t,
+      ...(tokenDetails[t.alphaId] || { _isLoading: true }),
+      competition: dbCompetitions[t.alphaId]
+    }));
+    setDisplayedTokens(sortTokens(tempDisplay, dbCompetitions));
 
-    // 2. Identify which ones need fetching
     const needFetch = results.filter(t => !tokenDetails[t.alphaId]);
-
-    // Update display immediately with what we have
-    const tempDisplay = results.map(t => {
-      if (tokenDetails[t.alphaId]) {
-        return { ...t, ...tokenDetails[t.alphaId] };
-      }
-      return { ...t, _isLoading: true };
-    });
-    setDisplayedTokens(tempDisplay);
-
     if (needFetch.length > 0) {
-      // 3. Fetch missing details in background
-      const fetchedData = await fetchAllData(needFetch);
-      updateStore(fetchedData);
+      const batchStats = await fetchBatchDetails(needFetch);
+      const details = Object.keys(batchStats).map(id => {
+        const basic = allBasicTokens.find(t => t.alphaId === id);
+        return {
+          ...basic,
+          ...batchStats[id]
+        };
+      });
+      updateStore(details);
     }
-  };
+  }, [allBasicTokens, tokenDetails, dbCompetitions, updateStore]);
 
-  // React to tokenDetails update to refresh display if we are searching or viewing
+  // Initial Load Trigger
+  useEffect(() => {
+    initialLoad();
+  }, [initialLoad]);
+
+  // Auto Refresh Logic
+  useEffect(() => {
+    const intervalId = setInterval(async () => {
+      if (displayedTokens.length > 0 && !loadingInitial && !isAdmin) {
+        const tokensToRefresh = displayedTokens.filter(t => !t._isLoading);
+        if (tokensToRefresh.length === 0) return;
+
+        const fetchedData = await fetchAllData(tokensToRefresh);
+        updateStore(fetchedData);
+      }
+    }, 30000);
+    return () => clearInterval(intervalId);
+  }, [displayedTokens, loadingInitial, updateStore, isAdmin]);
+
+  // Sync displayedTokens when tokenDetails or competitions update
   useEffect(() => {
     setDisplayedTokens(prev => {
-      return prev.map(t => {
-        // Update if we have new details for this token
-        if (tokenDetails[t.alphaId]) {
+      const next = prev.map(t => {
+        if (tokenDetails[t.alphaId] && (!t.ticker || t._isLoading)) {
           return { ...t, ...tokenDetails[t.alphaId], _isLoading: false };
         }
-        return t;
+        return { ...t, competition: dbCompetitions[t.alphaId] };
       });
+      return getSortedDisplayList(next);
     });
-  }, [tokenDetails]);
-
-  // Initial set for displayedTokens after first load
-  useEffect(() => {
-    if (!loadingInitial && allBasicTokens.length > 0 && displayedTokens.length === 0) {
-      // Default view: Top loaded sorted by volume
-      const allLoaded = Object.keys(tokenDetails).map(id => {
-        const basic = allBasicTokens.find(t => t.alphaId === id);
-        if (!basic) return null;
-        return { ...basic, ...tokenDetails[id] };
-      }).filter(Boolean);
-
-      const sorted = allLoaded.sort((a, b) => b.volumeStats.volToday - a.volumeStats.volToday).slice(0, 20);
-      setDisplayedTokens(sorted);
-    }
-  }, [loadingInitial, allBasicTokens, tokenDetails]);
-
+  }, [tokenDetails, dbCompetitions, getSortedDisplayList]);
 
   return (
+    <Routes>
+      <Route path="/" element={
+        <Dashboard
+          tokens={displayedTokens}
+          loading={loadingInitial}
+          progress={initProgress}
+          total={initTotal}
+          lastUpdated={lastUpdated}
+          onRefresh={initialLoad}
+          onSearch={handleSearch}
+        />
+      } />
+      <Route path="/token/:alphaId" element={<Detail />} />
+      <Route path="/admin" element={<AdminDashboard tokens={allBasicTokens} />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
     <HashRouter>
-      <AppContent />
+      <MainContent />
     </HashRouter>
   );
 }
