@@ -87,8 +87,8 @@ function MainContent() {
     const nonCompTokens = list.filter(t => !compAlphaIds.includes(t.alphaId));
 
     // Create a prioritized list for the initial batch (Comp tokens + top Binance tokens)
-    // We fetch up to 25 to be safe
-    const prioritizedList = [...compTokens, ...nonCompTokens.slice(0, Math.max(0, 25 - compTokens.length))];
+    // We fetch up to 50 to be safe
+    const prioritizedList = [...compTokens, ...nonCompTokens.slice(0, Math.max(0, 50 - compTokens.length))];
 
     // Show placeholders for the prioritized list
     setDisplayedTokens(prioritizedList.map(t => ({ ...t, _isLoading: true })));
@@ -123,7 +123,7 @@ function MainContent() {
         return { ...basic, ...tokenDetails[id], competition: dbCompetitions[id] };
       }).filter(Boolean);
 
-      setDisplayedTokens(getSortedDisplayList(allLoaded).slice(0, 20));
+      setDisplayedTokens(getSortedDisplayList(allLoaded).slice(0, 50));
       return;
     }
 
