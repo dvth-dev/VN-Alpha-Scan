@@ -447,19 +447,8 @@ function Detail() {
                                         <div className="flex items-center justify-between gap-4 mb-4">
                                             <h4 className="text-sm font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
                                                 <Target className="w-4 h-4" />
-                                                Dự tính Volume lọt Top
+                                                Dự tính Volume lọt Top: {topRank}
                                             </h4>
-
-                                            <div className="flex items-center gap-2 bg-slate-900/60 rounded-full px-3 py-1 border border-amber-500/20">
-                                                <Users className="w-3 h-3 text-amber-500" />
-                                                <span className="text-xs text-slate-400 font-medium">Top:</span>
-                                                <input
-                                                    type="number"
-                                                    value={topRank}
-                                                    onChange={(e) => setTopRank(parseInt(e.target.value) || 0)}
-                                                    className="w-12 bg-transparent text-amber-400 font-bold text-xs focus:outline-none text-right appearance-none"
-                                                />
-                                            </div>
                                         </div>
 
                                         <div className="bg-gradient-to-r from-slate-900/60 to-slate-800/60 rounded-xl border border-amber-500/10 p-4 grid grid-cols-2 gap-6 relative overflow-hidden group">
@@ -479,9 +468,6 @@ function Detail() {
                                                 </div>
                                             </div>
 
-                                            <div className="col-span-2 text-[10px] text-center text-slate-600 font-medium border-t border-slate-700/30 pt-2 mt-[-8px]">
-                                                Dự phóng tổng Vol: {formatVolume(prediction.projectedTotal)} (Pareto Model)
-                                            </div>
                                         </div>
                                     </div>
                                 )}
