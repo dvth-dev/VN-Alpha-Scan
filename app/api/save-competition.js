@@ -10,8 +10,8 @@ export default async function handler(req, res) {
         const data = req.body;
 
         // Phân tích từ frontend (Competitions.jsx):
-        // Dữ liệu cần thiết gồm: alphaId, symbol, name, iconUrl, startTime, endTime
-        const { alphaId, symbol, name, iconUrl, startTime, endTime } = data;
+        // Dữ liệu cần thiết gồm: alphaId, symbol, name, iconUrl, startTime, endTime, winningSpots
+        const { alphaId, symbol, name, iconUrl, startTime, endTime, winningSpots } = data;
 
         if (!alphaId) {
             return res.status(400).json({ message: 'Missing alphaId' });
@@ -34,6 +34,7 @@ export default async function handler(req, res) {
                     iconUrl,
                     startTime: startTime ? new Date(startTime) : null,
                     endTime: endTime ? new Date(endTime) : null,
+                    winningSpots: winningSpots ? parseInt(winningSpots) : null,
                     updatedAt: new Date()
                 }
             },

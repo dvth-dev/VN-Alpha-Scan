@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { fetchTokenList, fetchTicker, getDailyVolumeStats, fetchKlines } from './api';
 import TokenIcon from './TokenIcon';
-import { ArrowLeft, TrendingUp, TrendingDown, Activity, Clock, Calendar, Calculator, Trophy } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Activity, Clock, Calendar, Calculator, Trophy, Target, Users } from 'lucide-react';
 
 const formatCurrency = (val) => {
     const num = parseFloat(val);
@@ -44,6 +44,61 @@ function Detail() {
     const [dailyData, setDailyData] = useState([]); // Array of { time, volume }
     const [totalCustomVolume, setTotalCustomVolume] = useState(null);
     const [calculating, setCalculating] = useState(false);
+
+    const [compDailyData, setCompDailyData] = useState([]);
+    const [compTotalVol, setCompTotalVol] = useState(0);
+    const [compLoading, setCompLoading] = useState(false);
+
+    // Prediction State
+    const [topRank, setTopRank] = useState(500);
+    const [prediction, setPrediction] = useState(null);
+
+    // Update topRank when competition data loads
+    useEffect(() => {
+        if (competition && competition.winningSpots) {
+            setTopRank(competition.winningSpots);
+        }
+    }, [competition]);
+
+    useEffect(() => {
+        if (compTotalVol > 0 && compDailyData.length > 0 && competition) {
+            const oneDay = 24 * 60 * 60 * 1000;
+            const totalDuration = Math.max(1, Math.ceil((new Date(competition.endTime) - new Date(competition.startTime)) / oneDay));
+
+            // Số ngày thực tế đã chạy có dữ liệu (Days Elapsed)
+            const daysRun = Math.max(1, compDailyData.length);
+
+            // Volume trung bình/ngày thực tế
+            const avgVol = compTotalVol / daysRun;
+
+            // Dự phóng đến cuối giải
+            // Nếu competition chưa kết thúc, cộng thêm volume dự kiến của các ngày còn lại
+            // Nếu time hiện tại > endTime, coi như đã kết thúc, projected = actual
+            const isEnded = new Date() > new Date(competition.endTime);
+            let projectedTotal = compTotalVol;
+
+            if (!isEnded && daysRun < totalDuration) {
+                const daysRemaining = totalDuration - daysRun;
+                projectedTotal += (avgVol * daysRemaining);
+            }
+
+            // Pareto Logic: Top group (assume defined by topRank) holds ~80% of volume (or adjusted ratio)
+            // Tuy nhiên, Top Rank Count là con số cụ thể, ko phải % user. 
+            // Giả định: Nhóm thắng cuộc (Winners Pool) nắm 80% Volume.
+            const winnersPool = projectedTotal * 0.8;
+
+            // Average per winner - sử dụng topRank từ competition.winningSpots
+            const avgPerWinner = winnersPool / Math.max(1, topRank);
+
+            // Dùng hệ số trượt (Tail Ratio) để tính Cutoff
+            // Min (Dễ thở): 0.25 * Avg
+            // Max (An toàn): 0.4 * Avg
+            const minEst = avgPerWinner * 0.25;
+            const maxEst = avgPerWinner * 0.4;
+
+            setPrediction({ min: minEst, max: maxEst, projectedTotal });
+        }
+    }, [compTotalVol, compDailyData, competition, topRank]);
 
     useEffect(() => {
         const loadDetail = async () => {
@@ -115,6 +170,42 @@ function Detail() {
             loadDetail();
         }
     }, [alphaId, passedData]);
+
+    // Fetch Competition Volume automatically
+    useEffect(() => {
+        if (competition && token) {
+            const fetchCompVolume = async () => {
+                setCompLoading(true);
+                try {
+                    const startTs = new Date(competition.startTime).getTime();
+                    const endTs = new Date(competition.endTime).getTime();
+                    const symbol = `${token.alphaId}USDT`;
+
+                    const klines = await fetchKlines(symbol, '1d', startTs, endTs);
+
+                    let total = 0;
+                    const stats = [];
+                    if (klines && Array.isArray(klines)) {
+                        klines.forEach(k => {
+                            const t = parseInt(k[0]);
+                            // Ensure we only count correctly if needed, but fetchKlines usually filters well
+                            const v = parseFloat(k[7]);
+                            total += v;
+                            stats.push({ time: t, volume: v });
+                        });
+                    }
+                    stats.sort((a, b) => b.time - a.time);
+                    setCompDailyData(stats);
+                    setCompTotalVol(total);
+                } catch (err) {
+                    console.error("Error fetching competition volume:", err);
+                } finally {
+                    setCompLoading(false);
+                }
+            };
+            fetchCompVolume();
+        }
+    }, [competition, token]);
 
     const handleCalculateVolume = async () => {
         if (!fromDate || !toDate || !token) return;
@@ -287,6 +378,113 @@ function Detail() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Competition Volume Stats */}
+                                {(compLoading || compDailyData.length > 0) && (
+                                    <div className="mt-6 pt-6 border-t border-amber-500/10 animate-in fade-in slide-in-from-bottom-2">
+                                        <h4 className="text-sm font-bold text-amber-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <Activity className="w-4 h-4" />
+                                            Thống kê Volume giải đấu
+                                        </h4>
+
+                                        {compLoading ? (
+                                            <div className="bg-slate-900/40 rounded-xl border border-amber-500/10 p-8 flex flex-col items-center justify-center gap-3">
+                                                <div className="w-8 h-8 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+                                                <p className="text-xs text-amber-500/50 uppercase tracking-wider font-bold animate-pulse">Đang tải dữ liệu...</p>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-slate-900/40 rounded-xl border border-amber-500/10 overflow-hidden">
+                                                <div className="grid grid-cols-2 gap-4 p-4 border-b border-amber-500/10 bg-amber-500/5">
+                                                    <div>
+                                                        <div className="text-[10px] font-bold text-amber-500/50 uppercase tracking-widest">Tổng Volume</div>
+                                                        <div className="text-xl font-mono font-bold text-amber-400">
+                                                            {formatVolume(compTotalVol)}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-[10px] font-bold text-amber-500/50 uppercase tracking-widest">Tiến độ (Ngày)</div>
+                                                        <div className="text-xl font-mono font-bold text-amber-400">
+                                                            {compDailyData.length}/{Math.ceil((new Date(competition.endTime) - new Date(competition.startTime)) / (1000 * 60 * 60 * 24))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                                    <table className="w-full text-left">
+                                                        <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10">
+                                                            <tr className="text-[10px] uppercase text-amber-500/50 font-bold border-b border-amber-500/5">
+                                                                <th className="p-3 pl-4">Thời gian</th>
+                                                                <th className="p-3 pr-4 text-right">Volume</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-amber-500/5">
+                                                            {compDailyData.map((d, i) => (
+                                                                <tr key={i} className="hover:bg-amber-500/5 transition-colors">
+                                                                    <td className="p-3 pl-4 text-xs font-mono text-amber-200/80">
+                                                                        {new Date(d.time).toLocaleDateString('vi-VN', {
+                                                                            weekday: 'short',
+                                                                            year: 'numeric',
+                                                                            month: '2-digit',
+                                                                            day: '2-digit'
+                                                                        })}
+                                                                    </td>
+                                                                    <td className="p-3 pr-4 text-right text-xs font-mono font-bold text-amber-400">
+                                                                        {formatVolume(d.volume)}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Prediction Section */}
+                                {prediction && (
+                                    <div className="mt-4 pt-4 border-t border-amber-500/10 animate-in fade-in slide-in-from-bottom-3">
+                                        <div className="flex items-center justify-between gap-4 mb-4">
+                                            <h4 className="text-sm font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+                                                <Target className="w-4 h-4" />
+                                                Dự tính Volume lọt Top
+                                            </h4>
+
+                                            <div className="flex items-center gap-2 bg-slate-900/60 rounded-full px-3 py-1 border border-amber-500/20">
+                                                <Users className="w-3 h-3 text-amber-500" />
+                                                <span className="text-xs text-slate-400 font-medium">Top:</span>
+                                                <input
+                                                    type="number"
+                                                    value={topRank}
+                                                    onChange={(e) => setTopRank(parseInt(e.target.value) || 0)}
+                                                    className="w-12 bg-transparent text-amber-400 font-bold text-xs focus:outline-none text-right appearance-none"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gradient-to-r from-slate-900/60 to-slate-800/60 rounded-xl border border-amber-500/10 p-4 grid grid-cols-2 gap-6 relative overflow-hidden group">
+                                            <div className="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10 transition-colors"></div>
+
+                                            <div className="relative z-10">
+                                                <div className="text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">Cạnh tranh thấp</div>
+                                                <div className="text-lg font-mono font-bold text-slate-300">
+                                                    {formatVolume(prediction.min)}
+                                                </div>
+                                            </div>
+
+                                            <div className="relative z-10 text-right">
+                                                <div className="text-[10px] uppercase text-amber-500 font-bold tracking-widest mb-1">Mức an toàn</div>
+                                                <div className="text-2xl font-mono font-black text-amber-400 drop-shadow-sm">
+                                                    {formatVolume(prediction.max)}
+                                                </div>
+                                            </div>
+
+                                            <div className="col-span-2 text-[10px] text-center text-slate-600 font-medium border-t border-slate-700/30 pt-2 mt-[-8px]">
+                                                Dự phóng tổng Vol: {formatVolume(prediction.projectedTotal)} (Pareto Model)
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -305,7 +503,7 @@ function Detail() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-7 gap-4 items-center bg-slate-900/40 p-2 rounded-2xl border border-slate-800/50">
-                        <div className="md:col-span-3 relative group">
+                        <div className="md:col-span-3 relative group" onClick={(e) => e.currentTarget.querySelector('input')?.showPicker?.()}>
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
                                 <Calendar className="w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                             </div>
@@ -322,7 +520,7 @@ function Detail() {
                             <ArrowLeft className="w-5 h-5 rotate-180" />
                         </div>
 
-                        <div className="md:col-span-3 relative group">
+                        <div className="md:col-span-3 relative group" onClick={(e) => e.currentTarget.querySelector('input')?.showPicker?.()}>
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
                                 <Calendar className="w-5 h-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
                             </div>
