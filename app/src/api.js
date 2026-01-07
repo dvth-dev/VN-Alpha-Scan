@@ -1,9 +1,10 @@
 import axios from 'axios';
 
-// Use local proxy path to avoid CORS
-const TOKEN_LIST_URL = '/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list';
-const TICKER_URL = '/bapi/defi/v1/public/alpha-trade/ticker';
-const KLINES_URL = '/bapi/defi/v1/public/alpha-trade/klines';
+// Using direct Binance URLs instead of relative proxy paths
+const BINANCE_BASE_URL = 'https://www.binance.com';
+const TOKEN_LIST_URL = `${BINANCE_BASE_URL}/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list`;
+const TICKER_URL = `${BINANCE_BASE_URL}/bapi/defi/v1/public/alpha-trade/ticker`;
+const KLINES_URL = `${BINANCE_BASE_URL}/bapi/defi/v1/public/alpha-trade/klines`;
 
 export const fetchTokenList = async () => {
     try {
@@ -13,7 +14,7 @@ export const fetchTokenList = async () => {
         }
         return [];
     } catch (error) {
-        console.error("Error fetching token list:", error);
+        console.error("Error fetching token list from Binance:", error);
         return [];
     }
 };

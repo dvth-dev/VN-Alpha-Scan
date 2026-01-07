@@ -1,64 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Search, Loader2, Trash2, AlertCircle, X, Calendar, Clock } from 'lucide-react';
 import { fetchTokenList } from '../api';
-import { db } from '../firebase';
-import { collection, getDocs, setDoc, deleteDoc, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import axios from 'axios';
 
-const Competitions = () => {
-    const [tokens, setTokens] = useState([]);
-    const [loading, setLoading] = useState(true);
+const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
+    const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [dbCompetitions, setDbCompetitions] = useState({}); // Map of alphaId -> competition data
 
     // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [selectedToken, setSelectedToken] = useState(null);
     const [competitionForm, setCompetitionForm] = useState({
-        startDate: '',
-        startTime: '',
-        endDate: '',
-        endTime: ''
+        startDateTime: '',
+        endDateTime: ''
     });
 
-    useEffect(() => {
-        const loadAllData = async () => {
-            setLoading(true);
-            try {
-                // 1. Load from Firestore
-                const querySnapshot = await getDocs(collection(db, "competitions"));
-                const compMap = {};
-                querySnapshot.forEach((doc) => {
-                    compMap[doc.id] = doc.data();
-                });
-                setDbCompetitions(compMap);
+    const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '' }
 
-                // 2. Load from Binance
-                const data = await fetchTokenList();
-                setTokens(data);
-            } catch (error) {
-                console.error("Error loading data:", error);
-            }
-            setLoading(false);
-        };
-        loadAllData();
-    }, []);
+    // Dữ liệu đã được fetch từ component cha AdminDashboard
+    // Không cần fetch lại ở đây
+
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
 
     const handleTokenClick = (token) => {
         setSelectedToken(token);
         const existing = dbCompetitions[token.alphaId];
         if (existing) {
-            const start = existing.startTime.toDate();
-            const end = existing.endTime.toDate();
+            const start = new Date(existing.startTime);
+            const end = new Date(existing.endTime);
             const pad = (n) => n.toString().padStart(2, '0');
+            const formatForInput = (date) => {
+                return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+            };
             setCompetitionForm({
-                startDate: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-                startTime: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
-                endDate: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`,
-                endTime: `${pad(end.getHours())}:${pad(end.getMinutes())}`
+                startDateTime: formatForInput(start),
+                endDateTime: formatForInput(end)
             });
         } else {
-            setCompetitionForm({ startDate: '', startTime: '', endDate: '', endTime: '' });
+            setCompetitionForm({ startDateTime: '', endDateTime: '' });
         }
         setIsModalOpen(true);
     };
@@ -67,34 +52,33 @@ const Competitions = () => {
         if (!selectedToken) return;
         try {
             setLoading(true);
-            await deleteDoc(doc(db, "competitions", selectedToken.alphaId));
+            const response = await axios.delete(`/api/delete-competition?alphaId=${selectedToken.alphaId}`);
 
-            setDbCompetitions(prev => {
-                const next = { ...prev };
-                delete next[selectedToken.alphaId];
-                return next;
-            });
+            if (response.data && response.data.code === '000000') {
+                setShowDeleteConfirm(false);
+                setIsModalOpen(false);
+                setNotification({ type: 'success', message: `Deleted competition for ${selectedToken.symbol}` });
 
-            setShowDeleteConfirm(false);
-            setIsModalOpen(false);
-            alert(`Deleted competition for ${selectedToken.symbol}`);
+                // Cập nhật lại stats ở Dashboard cha
+                if (refreshStats) refreshStats();
+            }
         } catch (error) {
             console.error("Delete error:", error);
-            alert("Failed to delete.");
+            setNotification({ type: 'error', message: "Failed to delete: " + error.message });
         } finally {
             setLoading(false);
         }
     };
 
     const handleConfirm = async () => {
-        const { startDate, startTime, endDate, endTime } = competitionForm;
-        if (!startDate || !startTime || !endDate || !endTime) {
-            alert("Please fill in all date and time fields!");
+        const { startDateTime, endDateTime } = competitionForm;
+        if (!startDateTime || !endDateTime) {
+            alert("Please fill in both start and end date-time!");
             return;
         }
 
-        const startTimestamp = new Date(`${startDate}T${startTime}`);
-        const endTimestamp = new Date(`${endDate}T${endTime}`);
+        const startTimestamp = new Date(startDateTime);
+        const endTimestamp = new Date(endDateTime);
 
         if (endTimestamp <= startTimestamp) {
             alert("End time must be after start time!");
@@ -108,24 +92,31 @@ const Competitions = () => {
                 symbol: selectedToken.symbol,
                 name: selectedToken.name,
                 iconUrl: selectedToken.iconUrl || '',
-                startTime: Timestamp.fromDate(startTimestamp),
-                endTime: Timestamp.fromDate(endTimestamp),
-                updatedAt: serverTimestamp()
+                startTime: startTimestamp,
+                endTime: endTimestamp,
+                updatedAt: new Date()
             };
 
-            await setDoc(doc(db, "competitions", selectedToken.alphaId), competitionData);
+            // Determine which API to call
+            const endpoint = dbCompetitions[selectedToken.alphaId]
+                ? '/api/update-competition'
+                : '/api/save-competition';
 
-            setDbCompetitions(prev => ({
-                ...prev,
-                [selectedToken.alphaId]: competitionData
-            }));
+            const response = await axios.post(endpoint, competitionData);
 
-            alert(`Successfully registered competition for ${selectedToken.symbol}!`);
-            setIsModalOpen(false);
-            setCompetitionForm({ startDate: '', startTime: '', endDate: '', endTime: '' });
+            if (response.data && response.data.code === '000000') {
+                setNotification({ type: 'success', message: `Successfully registered competition for ${selectedToken.symbol}!` });
+                setIsModalOpen(false);
+                setCompetitionForm({ startDateTime: '', endDateTime: '' });
+
+                // Cập nhật lại stats ở Dashboard cha
+                if (refreshStats) refreshStats();
+            } else {
+                throw new Error(response.data.message || 'Failed to save');
+            }
         } catch (error) {
-            console.error("Error saving to Firebase:", error);
-            alert("Failed to save competition. Please check your Firebase rules.");
+            console.error("Error saving competition:", error);
+            setNotification({ type: 'error', message: "Failed to save competition: " + error.message });
         } finally {
             setLoading(false);
         }
@@ -136,8 +127,8 @@ const Competitions = () => {
         if (!comp) return { label: 'No Competition', color: 'slate' };
 
         const now = new Date();
-        const start = comp.startTime?.toDate();
-        const end = comp.endTime?.toDate();
+        const start = comp.startTime ? new Date(comp.startTime) : null;
+        const end = comp.endTime ? new Date(comp.endTime) : null;
 
         if (!start || !end) return { label: 'Error', color: 'rose' };
 
@@ -177,7 +168,7 @@ const Competitions = () => {
             {loading ? (
                 <div className="h-96 flex flex-col items-center justify-center bg-[#11121a] border border-slate-800/50 rounded-2xl">
                     <Loader2 className="text-indigo-500 animate-spin mb-4" size={40} />
-                    <p className="text-slate-400 animate-pulse">Fetching Alpha data from Binance...</p>
+                    <p className="text-slate-400 animate-pulse">Fetching Alpha data and status...</p>
                 </div>
             ) : (
                 <div className="bg-[#11121a] border border-slate-800/50 rounded-2xl overflow-hidden shadow-xl shadow-black/20">
@@ -272,48 +263,32 @@ const Competitions = () => {
                         <div className="p-6 space-y-6">
                             <div className="space-y-4">
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 mb-2 block">Start Date & Time</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="relative group/input" onClick={(e) => e.currentTarget.querySelector('input').showPicker()}>
-                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-white group-focus-within/input:text-indigo-400 pointer-events-none" size={16} />
-                                            <input
-                                                type="date"
-                                                className="bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all w-full cursor-pointer appearance-none"
-                                                value={competitionForm.startDate}
-                                                onChange={(e) => setCompetitionForm({ ...competitionForm, startDate: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="relative group/input" onClick={(e) => e.currentTarget.querySelector('input').showPicker()}>
-                                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-white group-focus-within/input:text-indigo-400 pointer-events-none" size={16} />
-                                            <input
-                                                type="time"
-                                                className="bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all w-full cursor-pointer appearance-none"
-                                                value={competitionForm.startTime}
-                                                onChange={(e) => setCompetitionForm({ ...competitionForm, startTime: e.target.value })}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 mb-2 block">Competition Timeline</label>
 
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 mb-2 block">End Date & Time</label>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-4">
                                         <div className="relative group/input" onClick={(e) => e.currentTarget.querySelector('input').showPicker()}>
-                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-white group-focus-within/input:text-indigo-400 pointer-events-none" size={16} />
+                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                                                <Calendar className="text-white group-focus-within/input:text-emerald-400 transition-colors" size={16} />
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Start</span>
+                                            </div>
                                             <input
-                                                type="date"
-                                                className="bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all w-full cursor-pointer appearance-none"
-                                                value={competitionForm.endDate}
-                                                onChange={(e) => setCompetitionForm({ ...competitionForm, endDate: e.target.value })}
+                                                type="datetime-local"
+                                                className="bg-slate-900 border border-slate-800 rounded-2xl pl-24 pr-4 py-4 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-all w-full cursor-pointer appearance-none"
+                                                value={competitionForm.startDateTime}
+                                                onChange={(e) => setCompetitionForm({ ...competitionForm, startDateTime: e.target.value })}
                                             />
                                         </div>
+
                                         <div className="relative group/input" onClick={(e) => e.currentTarget.querySelector('input').showPicker()}>
-                                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-white group-focus-within/input:text-indigo-400 pointer-events-none" size={16} />
+                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                                                <Calendar className="text-white group-focus-within/input:text-rose-400 transition-colors" size={16} />
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">End</span>
+                                            </div>
                                             <input
-                                                type="time"
-                                                className="bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all w-full cursor-pointer appearance-none"
-                                                value={competitionForm.endTime}
-                                                onChange={(e) => setCompetitionForm({ ...competitionForm, endTime: e.target.value })}
+                                                type="datetime-local"
+                                                className="bg-slate-900 border border-slate-800 rounded-2xl pl-24 pr-4 py-4 text-sm text-white focus:outline-none focus:border-rose-500/50 transition-all w-full cursor-pointer appearance-none"
+                                                value={competitionForm.endDateTime}
+                                                onChange={(e) => setCompetitionForm({ ...competitionForm, endDateTime: e.target.value })}
                                             />
                                         </div>
                                     </div>
@@ -382,6 +357,16 @@ const Competitions = () => {
                                 Yes, Delete
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div className="fixed bottom-6 right-6 z-[200] animate-in slide-in-from-right-10 duration-300">
+                    <div className={`${notification.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/10 border-rose-500/50 text-rose-400'} border backdrop-blur-md px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3`}>
+                        {notification.type === 'success' ? <Trophy size={18} /> : <AlertCircle size={18} />}
+                        <p className="text-sm font-bold tracking-tight">{notification.message}</p>
                     </div>
                 </div>
             )}

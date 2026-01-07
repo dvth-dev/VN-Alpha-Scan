@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Users, Eye, Activity, ArrowUpRight, ArrowDownRight, Trophy, Clock, Trash2, AlertCircle } from 'lucide-react';
+import { TrendingUp, Users, Eye, Activity, ArrowUpRight, ArrowDownRight, Trophy, Clock, Trash2, AlertCircle, Lock, ShieldAlert, Key, Loader2 } from 'lucide-react';
+import axios from 'axios';
 import AdminLayout from './AdminLayout';
 import Competitions from './Competitions';
-import { db } from '../firebase';
-import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { fetchTokenList } from '../api';
 
 const AdminDashboard = () => {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -17,52 +17,111 @@ const AdminDashboard = () => {
         { label: 'Live Now', value: '0', change: '0%', trend: 'up', icon: <Activity size={20} className="text-purple-400" />, color: 'purple' },
         { label: 'System Status', value: 'Active', change: '100%', trend: 'up', icon: <TrendingUp size={20} className="text-indigo-400" />, color: 'indigo' },
     ]);
+    const [allTokens, setAllTokens] = useState([]);
+    const [dbCompetitionsMap, setDbCompetitionsMap] = useState({}); // alphaId -> competition data
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [password, setPassword] = useState('');
+    const [loginError, setLoginError] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: '' }
+
+    useEffect(() => {
+        const auth = localStorage.getItem('admin_authenticated');
+        if (auth === 'true') {
+            setIsAuthenticated(true);
+        }
+    }, []);
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoginError('');
+        setIsVerifying(true);
+        try {
+            const response = await axios.post('/api/verify-pass', { password });
+            if (response.data.authenticated) {
+                setIsAuthenticated(true);
+                localStorage.setItem('admin_authenticated', 'true');
+            }
+        } catch (error) {
+            setLoginError(error.response?.data?.message || 'Invalid password');
+        } finally {
+            setIsVerifying(false);
+        }
+    };
+
+    const handleLogout = () => {
+        setIsAuthenticated(false);
+        localStorage.removeItem('admin_authenticated');
+    };
+
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
 
     const fetchStats = async () => {
         setLoading(true);
         try {
-            const q = query(collection(db, "competitions"), orderBy("updatedAt", "desc"));
-            const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // 1. Fetch from Binance
+            const binanceData = await fetchTokenList();
+            setAllTokens(binanceData);
 
-            setRecentCompetitions(data);
+            // 2. Fetch from MongoDB
+            const mongoRes = await axios.get('/api/competitions');
+            let mongoMap = {};
+            if (mongoRes.data && mongoRes.data.code === '000000') {
+                mongoRes.data.data.forEach(comp => {
+                    mongoMap[comp.alphaId] = comp;
+                });
+            }
 
-            const now = new Date();
-            const liveCount = data.filter(c => {
-                const start = c.startTime.toDate();
-                const end = c.endTime.toDate();
+            // 3. Merge & Update Stats
+            const liveCount = Object.values(mongoMap).filter(comp => {
+                const now = new Date();
+                const start = new Date(comp.startTime);
+                const end = new Date(comp.endTime);
                 return now >= start && now <= end;
             }).length;
 
             setStats(prev => {
                 const newStats = [...prev];
-                newStats[1].value = data.length.toString();
-                newStats[2].value = liveCount.toString();
+                newStats[1].value = Object.keys(mongoMap).length.toString(); // Số token đã lưu
+                newStats[2].value = liveCount.toString(); // Số token đang Live
                 return newStats;
             });
+
+            // Lưu toàn bộ map để dùng chung và list hiển thị chân trang
+            setDbCompetitionsMap(mongoMap);
+            setRecentCompetitions(mongoRes.data.data.slice(-5).reverse());
+
         } catch (error) {
-            console.error("Error fetching dashboard stats:", error);
+            console.error("Error fetching admin stats:", error);
         }
         setLoading(false);
     };
 
     useEffect(() => {
-        if (activeTab === 'dashboard') {
+        if (isAuthenticated) {
             fetchStats();
         }
-    }, [activeTab]);
+    }, [isAuthenticated]);
 
     const handleDelete = async () => {
         if (!selectedComp) return;
         try {
             setLoading(true);
-            await deleteDoc(doc(db, "competitions", selectedComp.id));
-            setShowDeleteConfirm(false);
-            setSelectedComp(null);
-            fetchStats();
+            const response = await axios.delete(`/api/delete-competition?alphaId=${selectedComp.alphaId}`);
+            if (response.data && response.data.code === '000000') {
+                setShowDeleteConfirm(false);
+                setNotification({ type: 'success', message: `Successfully deleted ${selectedComp.symbol} tournament!` });
+                setSelectedComp(null);
+                fetchStats();
+            }
         } catch (error) {
             console.error("Delete error:", error);
-            alert("Failed to delete competition.");
+            setNotification({ type: 'error', message: "Failed to delete: " + error.message });
         } finally {
             setLoading(false);
         }
@@ -97,73 +156,82 @@ const AdminDashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Real Data Table */}
-                <div className="lg:col-span-2 bg-[#11121a] border border-slate-800/50 rounded-2xl overflow-hidden flex flex-col shadow-xl">
-                    <div className="p-6 border-b border-slate-800/50 flex justify-between items-center bg-slate-800/10">
-                        <h2 className="text-lg font-bold text-white">Saved Competitions</h2>
-                        <button onClick={() => setActiveTab('competitions')} className="text-indigo-400 text-sm font-medium hover:underline">Add New</button>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b border-slate-800/50 text-slate-500 text-sm uppercase tracking-wider">
-                                    <th className="px-6 py-4 font-semibold text-[10px]">Token</th>
-                                    <th className="px-6 py-4 font-semibold text-[10px]">Start Date</th>
-                                    <th className="px-6 py-4 font-semibold text-[10px]">End Date</th>
-                                    <th className="px-6 py-4 font-semibold text-right text-[10px]">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/50">
-                                {recentCompetitions.length > 0 ? (
-                                    recentCompetitions.map((comp) => {
-                                        const now = new Date();
-                                        const start = comp.startTime.toDate();
-                                        const end = comp.endTime.toDate();
-                                        let status = { label: 'Upcoming', color: 'blue' };
-                                        if (now >= start && now <= end) status = { label: 'Live', color: 'emerald' };
-                                        else if (now > end) status = { label: 'Ended', color: 'rose' };
-
-                                        return (
-                                            <tr
-                                                key={comp.id}
-                                                onClick={() => { setSelectedComp(comp); setShowDeleteConfirm(true); }}
-                                                className="hover:bg-rose-500/5 cursor-pointer transition-colors group"
-                                            >
+                {/* Registered Tokens Table */}
+                <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-[#11121a] border border-slate-800/50 rounded-2xl overflow-hidden shadow-xl shadow-black/20">
+                        <div className="p-6 border-b border-slate-800/50 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Trophy className="text-amber-500" size={20} />
+                                Recent Registered Tokens
+                            </h2>
+                            <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-xs font-bold rounded-full border border-indigo-500/20">
+                                {recentCompetitions.length} Total
+                            </span>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="bg-slate-800/20 text-slate-500 text-[10px] uppercase tracking-wider font-bold">
+                                        <th className="px-6 py-4">Token</th>
+                                        <th className="px-6 py-4">Timeline</th>
+                                        <th className="px-6 py-4 text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800/40">
+                                    {recentCompetitions.length > 0 ? (
+                                        recentCompetitions.map((comp) => (
+                                            <tr key={comp.alphaId} className="hover:bg-slate-800/20 transition-colors">
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden group-hover:border-rose-500/30">
-                                                            {comp.iconUrl ? <img src={comp.iconUrl} className="p-1" /> : <span className="text-[10px]">{comp.symbol.substring(0, 2)}</span>}
+                                                        <div className="w-8 h-8 rounded-lg bg-slate-800 overflow-hidden border border-slate-700">
+                                                            {comp.iconUrl ? (
+                                                                <img src={comp.iconUrl} alt={comp.symbol} className="w-full h-full object-cover p-1" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-slate-500 uppercase">{comp.symbol?.slice(0, 3)}</div>
+                                                            )}
                                                         </div>
                                                         <div>
-                                                            <p className="text-sm font-bold text-white uppercase tracking-tight group-hover:text-rose-400">{comp.symbol}</p>
-                                                            <p className="text-[10px] text-slate-500 font-medium">{comp.name}</p>
+                                                            <p className="text-sm font-bold text-white uppercase">{comp.symbol}</p>
+                                                            <p className="text-[10px] text-slate-500">ID: {comp.alphaId}</p>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 text-xs text-slate-400">
-                                                    {start.toLocaleDateString()} <span className="text-slate-600 block">{start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                </td>
-                                                <td className="px-6 py-4 text-xs text-slate-400">
-                                                    {end.toLocaleDateString()} <span className="text-slate-600 block">{end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <div className="flex items-center justify-end gap-3">
-                                                        <span className={`inline-flex items-center px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest bg-${status.color}-500/10 text-${status.color}-400 border border-${status.color}-500/20`}>
-                                                            {status.label}
-                                                        </span>
-                                                        <Trash2 size={16} className="text-slate-600 group-hover:text-rose-500 transition-colors" />
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                                            {new Date(comp.startTime).toLocaleDateString()}
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 text-[11px] text-rose-400 font-medium">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
+                                                            {new Date(comp.endTime).toLocaleDateString()}
+                                                        </div>
                                                     </div>
                                                 </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedComp(comp);
+                                                            setShowDeleteConfirm(true);
+                                                        }}
+                                                        className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                                                        title="Remove Tournament"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </td>
                                             </tr>
-                                        );
-                                    })
-                                ) : (
-                                    <tr>
-                                        <td colSpan="4" className="px-6 py-12 text-center text-slate-500 text-sm">No competitions found. Add one in the Competitions tab.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="3" className="px-6 py-12 text-center text-slate-600 italic text-sm">
+                                                No tokens registered yet.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
@@ -194,10 +262,76 @@ const AdminDashboard = () => {
         </div>
     );
 
+    if (!isAuthenticated) {
+        return (
+            <div className="min-h-screen bg-[#05060b] flex items-center justify-center p-4">
+                <div className="w-full max-w-md animate-in fade-in zoom-in duration-500">
+                    <div className="bg-[#11121a] border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+                        {/* Decorative Background */}
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl -mr-16 -mt-16 rounded-full"></div>
+
+                        <div className="relative z-10">
+                            <div className="w-16 h-16 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-500/5">
+                                <Lock className="text-indigo-400" size={32} />
+                            </div>
+
+                            <h2 className="text-2xl font-bold text-white text-center mb-2">Admin Access</h2>
+                            <p className="text-slate-400 text-center text-sm mb-8">Please enter your secret password to continue.</p>
+
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <div className="space-y-2">
+                                    <div className="relative group/input">
+                                        <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-indigo-400 transition-colors" size={18} />
+                                        <input
+                                            type="password"
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder="Enter secret password..."
+                                            className="w-full bg-[#1c1d26] border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/5 transition-all"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    {loginError && (
+                                        <div className="flex items-center gap-2 text-rose-400 text-xs mt-2 ml-1 animate-in slide-in-from-top-2">
+                                            <ShieldAlert size={14} />
+                                            <span>{loginError}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={isVerifying}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-600/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-4"
+                                >
+                                    {isVerifying ? (
+                                        <Loader2 className="animate-spin" size={20} />
+                                    ) : (
+                                        "Verify Identity"
+                                    )}
+                                </button>
+                            </form>
+
+                            <div className="mt-8 pt-6 border-t border-slate-800/50 text-center">
+                                <a href="/" className="text-slate-500 hover:text-white text-sm transition-colors">Return to Homepage</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <AdminLayout activeTab={activeTab} onTabChange={setActiveTab}>
             {activeTab === 'dashboard' && renderDashboard()}
-            {activeTab === 'competitions' && <Competitions />}
+            {activeTab === 'competitions' && (
+                <Competitions
+                    tokens={allTokens}
+                    dbCompetitions={dbCompetitionsMap}
+                    refreshStats={fetchStats}
+                />
+            )}
             {activeTab === 'settings' && (
                 <div className="flex items-center justify-center h-64 border-2 border-dashed border-slate-800 rounded-2xl text-slate-500">
                     Settings page coming soon...
@@ -230,6 +364,16 @@ const AdminDashboard = () => {
                                 {loading ? 'Deleting...' : 'Yes, Delete'}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Notification Toast */}
+            {notification && (
+                <div className="fixed bottom-6 right-6 z-[200] animate-in slide-in-from-right-10 duration-300">
+                    <div className={`${notification.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-rose-500/10 border-rose-500/50 text-rose-400'} border backdrop-blur-md px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3`}>
+                        {notification.type === 'success' ? <Trophy size={18} /> : <AlertCircle size={18} />}
+                        <p className="text-sm font-bold tracking-tight">{notification.message}</p>
                     </div>
                 </div>
             )}
