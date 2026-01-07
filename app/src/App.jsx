@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import Detail from './Detail';
 import AdminDashboard from './admin/AdminDashboard';
@@ -157,7 +157,7 @@ function App() {
 
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route path="/" element={
           <Dashboard
@@ -173,7 +173,7 @@ function App() {
         <Route path="/token/:alphaId" element={<Detail />} />
         <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
