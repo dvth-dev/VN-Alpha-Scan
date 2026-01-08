@@ -3,7 +3,7 @@ import { Trophy, Search, Loader2, Trash2, AlertCircle, X, Calendar, Users } from
 import { fetchTokenList } from '../api';
 import axios from 'axios';
 
-const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
+const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats, onDeleteLocal }) => {
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -58,7 +58,10 @@ const Competitions = ({ tokens = [], dbCompetitions = {}, refreshStats }) => {
                 setIsModalOpen(false);
                 setNotification({ type: 'success', message: `Deleted competition for ${selectedToken.symbol}` });
 
-                if (refreshStats) refreshStats();
+                // Xóa local thay vì gọi API refresh
+                if (onDeleteLocal) {
+                    onDeleteLocal(selectedToken.alphaId);
+                }
             }
         } catch (error) {
             console.error("Delete error:", error);

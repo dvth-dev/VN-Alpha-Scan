@@ -51,7 +51,8 @@ function Detail() {
 
     // Prediction State
     const [topRank, setTopRank] = useState(500);
-    const [prediction, setPrediction] = useState(null);
+    const [prediction, setPrediction] = useState(null); // Version 1: Tổng volume
+    const [predictionV2, setPredictionV2] = useState(null); // Version 2: Volume MUA
 
     // Update topRank when competition data loads
     useEffect(() => {
@@ -60,6 +61,7 @@ function Detail() {
         }
     }, [competition]);
 
+    // VERSION 1: Tính dựa trên TỔNG VOLUME (giữ nguyên)
     useEffect(() => {
         if (compTotalVol > 0 && compDailyData.length > 0 && competition) {
             const oneDay = 24 * 60 * 60 * 1000;
@@ -84,21 +86,64 @@ function Detail() {
 
             // Pareto Logic: Top group (assume defined by topRank) holds ~80% of volume (or adjusted ratio)
             // Tuy nhiên, Top Rank Count là con số cụ thể, ko phải % user. 
-            // Giả định: Nhóm thắng cuộc (Winners Pool) nắm 80% Volume.
-            const winnersPool = projectedTotal * 0.8;
+            // Giả định: Nhóm thắng cuộc (Winners Pool) nắm 50% Volume.
+            const winnersPool = projectedTotal * 0.5;
 
             // Average per winner - sử dụng topRank từ competition.winningSpots
             const avgPerWinner = winnersPool / Math.max(1, topRank);
 
             // Dùng hệ số trượt (Tail Ratio) để tính Cutoff
-            // Min (Dễ thở): 0.25 * Avg
-            // Max (An toàn): 0.4 * Avg
-            const minEst = avgPerWinner * 0.25;
-            const maxEst = avgPerWinner * 0.4;
+            // Cập nhật: Min 0.7, Max 0.9
+            const minEst = avgPerWinner * 0.5;
+            const maxEst = avgPerWinner * 0.7;
 
             setPrediction({ min: minEst, max: maxEst, projectedTotal });
         }
     }, [compTotalVol, compDailyData, competition, topRank]);
+
+    // VERSION 2: Tính dựa trên VOLUME MUA (Taker Buy Volume)
+    useEffect(() => {
+        if (compDailyData.length > 0 && competition) {
+            const oneDay = 24 * 60 * 60 * 1000;
+            const totalDuration = Math.max(1, Math.ceil((new Date(competition.endTime) - new Date(competition.startTime)) / oneDay));
+            const daysRun = Math.max(1, compDailyData.length);
+
+            // Tính tổng Volume MUA từ dữ liệu đã có
+            const totalBuyVol = compDailyData.reduce((sum, day) => sum + (day.buyVolume || 0), 0);
+
+            if (totalBuyVol === 0) return; // Không có dữ liệu buy volume
+
+            // Volume MUA trung bình/ngày
+            const avgBuyVol = totalBuyVol / daysRun;
+
+            // Dự phóng Volume MUA đến cuối giải
+            const isEnded = new Date() > new Date(competition.endTime);
+            let projectedBuyTotal = totalBuyVol;
+
+            if (!isEnded && daysRun < totalDuration) {
+                const daysRemaining = totalDuration - daysRun;
+                projectedBuyTotal += (avgBuyVol * daysRemaining);
+            }
+
+            // Phân phối Pareto cho Volume MUA
+            // Giả định: Nhóm thắng cuộc nắm 50% Volume MUA
+            const winnersBuyPool = projectedBuyTotal * 0.5;
+
+            // Volume MUA trung bình mỗi winner
+            const avgBuyPerWinner = winnersBuyPool / Math.max(1, topRank);
+
+            // Hệ số cutoff cho Volume MUA
+            // Cập nhật: Min 0.7, Max 0.9
+            const minBuyEst = avgBuyPerWinner * 0.7;
+            const maxBuyEst = avgBuyPerWinner * 0.9;
+
+            setPredictionV2({
+                min: minBuyEst,
+                max: maxBuyEst,
+                projectedTotal: projectedBuyTotal
+            });
+        }
+    }, [compDailyData, competition, topRank]);
 
     useEffect(() => {
         const loadDetail = async () => {
@@ -188,10 +233,14 @@ function Detail() {
                     if (klines && Array.isArray(klines)) {
                         klines.forEach(k => {
                             const t = parseInt(k[0]);
-                            // Ensure we only count correctly if needed, but fetchKlines usually filters well
-                            const v = parseFloat(k[7]);
+                            const v = parseFloat(k[7]);        // Tổng volume (Quote)
+                            const buyVol = parseFloat(k[10]);  // Volume MUA (Taker Buy Quote)
                             total += v;
-                            stats.push({ time: t, volume: v });
+                            stats.push({
+                                time: t,
+                                volume: v,
+                                buyVolume: buyVol  // Thêm volume mua
+                            });
                         });
                     }
                     stats.sort((a, b) => b.time - a.time);
@@ -441,8 +490,8 @@ function Detail() {
                                     </div>
                                 )}
 
-                                {/* Prediction Section */}
-                                {prediction && (
+                                {/* Prediction Section - Buy Volume (Consolidated) */}
+                                {predictionV2 && (
                                     <div className="mt-4 pt-4 border-t border-amber-500/10 animate-in fade-in slide-in-from-bottom-3">
                                         <div className="flex flex-col gap-2 mb-4">
                                             <h4 className="text-sm font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
@@ -451,9 +500,9 @@ function Detail() {
                                             </h4>
                                             <div className="text-[13px] text-amber-200/50 leading-relaxed">
                                                 <span className="font-bold text-amber-500">Lưu ý:</span><br />
-                                                - Khối lượng đang hiển thị được tính theo hệ số <span className="font-bold text-amber-500 uppercase">X1</span>.<br />
-                                                <span className="font-bold text-amber-500/80">- Khối lượng được tính dựa trên tổng volume tích lũy đến thời điểm hiện tại.</span><br />
-                                                - Đây chỉ là <span className="font-bold text-amber-500">khối lượng ước tính</span>, không đảm bảo chính xác 100%. Vui lòng sử dụng thông tin này như <span className="font-bold text-amber-500">dữ liệu tham khảo</span>, không phải số liệu tuyệt đối.
+                                                - Khối lượng được tính theo hệ số <span className="font-bold text-amber-500 uppercase">X1</span>.<br />
+                                                - <span className="font-bold text-amber-500/80">Khối lượng được tính dựa trên Volume MUA.</span><br />
+                                                - Đây chỉ là <span className="font-bold text-amber-500">khối lượng ước tính</span>, không đảm bảo chính xác 100%. Vui lòng sử dụng thông tin này như <span className="font-bold text-amber-500">dữ liệu tham khảo</span>.
                                             </div>
                                         </div>
 
@@ -463,14 +512,14 @@ function Detail() {
                                             <div className="relative z-10">
                                                 <div className="text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">Mức chấp nhận được</div>
                                                 <div className="text-lg font-mono font-bold text-slate-300">
-                                                    {formatVolume(prediction.min)}
+                                                    {formatVolume(predictionV2.min)}
                                                 </div>
                                             </div>
 
                                             <div className="relative z-10 text-right">
                                                 <div className="text-[10px] uppercase text-amber-500 font-bold tracking-widest mb-1">Mức an toàn</div>
                                                 <div className="text-2xl font-mono font-black text-amber-400 drop-shadow-sm">
-                                                    {formatVolume(prediction.max)}
+                                                    {formatVolume(predictionV2.max)}
                                                 </div>
                                             </div>
 
@@ -582,7 +631,7 @@ function Detail() {
                 </div>
 
             </div>
-        </div>
+        </div >
     );
 }
 

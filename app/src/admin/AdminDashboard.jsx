@@ -124,10 +124,30 @@ const AdminDashboard = ({ tokens = [] }) => {
             setLoading(true);
             const response = await axios.delete(`/api/delete-competition?alphaId=${selectedComp.alphaId}`);
             if (response.data && response.data.code === '000000') {
+                // Xóa local thay vì call API refresh
+                const deletedAlphaId = selectedComp.alphaId;
+
+                // Cập nhật recentCompetitions
+                setRecentCompetitions(prev => prev.filter(c => c.alphaId !== deletedAlphaId));
+
+                // Cập nhật dbCompetitionsMap
+                setDbCompetitionsMap(prev => {
+                    const next = { ...prev };
+                    delete next[deletedAlphaId];
+                    return next;
+                });
+
+                // Cập nhật stats
+                setStats(prev => {
+                    const newStats = [...prev];
+                    const currentSaved = parseInt(newStats[1].value) || 0;
+                    newStats[1].value = Math.max(0, currentSaved - 1).toString();
+                    return newStats;
+                });
+
                 setShowDeleteConfirm(false);
                 setNotification({ type: 'success', message: `Successfully deleted ${selectedComp.symbol} tournament!` });
                 setSelectedComp(null);
-                fetchStats();
             }
         } catch (error) {
             console.error("Delete error:", error);
@@ -340,6 +360,25 @@ const AdminDashboard = ({ tokens = [] }) => {
                     tokens={allTokens}
                     dbCompetitions={dbCompetitionsMap}
                     refreshStats={fetchStats}
+                    onDeleteLocal={(deletedAlphaId) => {
+                        // Xóa khỏi recentCompetitions
+                        setRecentCompetitions(prev => prev.filter(c => c.alphaId !== deletedAlphaId));
+
+                        // Xóa khỏi dbCompetitionsMap
+                        setDbCompetitionsMap(prev => {
+                            const next = { ...prev };
+                            delete next[deletedAlphaId];
+                            return next;
+                        });
+
+                        // Cập nhật stats
+                        setStats(prev => {
+                            const newStats = [...prev];
+                            const currentSaved = parseInt(newStats[1].value) || 0;
+                            newStats[1].value = Math.max(0, currentSaved - 1).toString();
+                            return newStats;
+                        });
+                    }}
                 />
             )}
             {activeTab === 'settings' && (
