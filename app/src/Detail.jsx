@@ -444,18 +444,24 @@ function Detail() {
                                 {/* Prediction Section */}
                                 {prediction && (
                                     <div className="mt-4 pt-4 border-t border-amber-500/10 animate-in fade-in slide-in-from-bottom-3">
-                                        <div className="flex items-center justify-between gap-4 mb-4">
+                                        <div className="flex flex-col gap-2 mb-4">
                                             <h4 className="text-sm font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
                                                 <Target className="w-4 h-4" />
                                                 Dự tính Volume lọt Top: {topRank}
                                             </h4>
+                                            <div className="text-[13px] text-amber-200/50 leading-relaxed">
+                                                <span className="font-bold text-amber-500">Lưu ý:</span><br />
+                                                - Khối lượng đang hiển thị được tính theo hệ số <span className="font-bold text-amber-500 uppercase">X1</span>.<br />
+                                                <span className="font-bold text-amber-500/80">- Khối lượng được tính dựa trên tổng volume tích lũy đến thời điểm hiện tại.</span><br />
+                                                - Đây chỉ là <span className="font-bold text-amber-500">khối lượng ước tính</span>, không đảm bảo chính xác 100%. Vui lòng sử dụng thông tin này như <span className="font-bold text-amber-500">dữ liệu tham khảo</span>, không phải số liệu tuyệt đối.
+                                            </div>
                                         </div>
 
                                         <div className="bg-gradient-to-r from-slate-900/60 to-slate-800/60 rounded-xl border border-amber-500/10 p-4 grid grid-cols-2 gap-6 relative overflow-hidden group">
                                             <div className="absolute inset-0 bg-amber-500/5 group-hover:bg-amber-500/10 transition-colors"></div>
 
                                             <div className="relative z-10">
-                                                <div className="text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">Cạnh tranh thấp</div>
+                                                <div className="text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">Mức chấp nhận được</div>
                                                 <div className="text-lg font-mono font-bold text-slate-300">
                                                     {formatVolume(prediction.min)}
                                                 </div>

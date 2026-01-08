@@ -19,15 +19,17 @@ function MainContent() {
   const isAdmin = location.pathname.startsWith('/admin');
 
   // Helper to re-calculate display list order (Internal version to avoid dependency loops)
+  // Token có trong DB competitions sẽ được đưa lên đầu (không cần check thời gian)
   const sortTokens = (tokensWithDetails, compsMap) => {
     return [...tokensWithDetails].sort((a, b) => {
-      const aComp = compsMap[a.alphaId];
-      const bComp = compsMap[b.alphaId];
-      const now = new Date();
-      const aIsActive = aComp && now >= new Date(aComp.startTime) && now <= new Date(aComp.endTime);
-      const bIsActive = bComp && now >= new Date(bComp.startTime) && now <= new Date(bComp.endTime);
-      if (aIsActive && !bIsActive) return -1;
-      if (!aIsActive && bIsActive) return 1;
+      const aComp = a.competition || compsMap?.[a.alphaId?.trim().toUpperCase()];
+      const bComp = b.competition || compsMap?.[b.alphaId?.trim().toUpperCase()];
+
+      // Token có competition đưa lên đầu
+      if (aComp && !bComp) return -1;
+      if (!aComp && bComp) return 1;
+
+      // Cùng loại thì sắp xếp theo volume
       const aVol = a.volumeStats?.volToday || 0;
       const bVol = b.volumeStats?.volToday || 0;
       return bVol - aVol;
@@ -70,7 +72,11 @@ function MainContent() {
     try {
       const res = await fetch('/api/competitions').then(r => r.json());
       if (res.code === '000000') {
-        res.data.forEach(c => compMap[c.alphaId] = c);
+        res.data.forEach(c => {
+          if (c.alphaId) {
+            compMap[c.alphaId.trim().toUpperCase()] = c;
+          }
+        });
         setDbCompetitions(compMap);
       }
     } catch (e) { console.error(e); }
@@ -83,8 +89,8 @@ function MainContent() {
 
     // Identify Competition Tokens to prioritize
     const compAlphaIds = Object.keys(compMap);
-    const compTokens = list.filter(t => compAlphaIds.includes(t.alphaId));
-    const nonCompTokens = list.filter(t => !compAlphaIds.includes(t.alphaId));
+    const compTokens = list.filter(t => t.alphaId && compAlphaIds.includes(t.alphaId.trim().toUpperCase()));
+    const nonCompTokens = list.filter(t => !t.alphaId || !compAlphaIds.includes(t.alphaId.trim().toUpperCase()));
 
     // Create a prioritized list for the initial batch (Comp tokens + top Binance tokens)
     // We fetch up to 50 to be safe
@@ -179,10 +185,12 @@ function MainContent() {
   useEffect(() => {
     setDisplayedTokens(prev => {
       const next = prev.map(t => {
+        const id = t.alphaId?.trim().toUpperCase();
+        const comp = dbCompetitions?.[id];
         if (tokenDetails[t.alphaId] && (!t.ticker || t._isLoading)) {
-          return { ...t, ...tokenDetails[t.alphaId], _isLoading: false };
+          return { ...t, ...tokenDetails[t.alphaId], _isLoading: false, competition: comp };
         }
-        return { ...t, competition: dbCompetitions[t.alphaId] };
+        return { ...t, competition: comp };
       });
       return getSortedDisplayList(next);
     });

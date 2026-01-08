@@ -105,10 +105,8 @@ function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, o
                                     </tr>
                                 ) : (
                                     tokens.map((token, index) => {
-                                        const now = new Date();
-                                        const isActiveComp = token.competition &&
-                                            now >= new Date(token.competition.startTime) &&
-                                            now <= new Date(token.competition.endTime);
+                                        // Show tag nếu token có trong DB competitions (không cần check thời gian)
+                                        const hasCompetition = !!token.competition;
 
                                         return (
                                             <tr
@@ -128,7 +126,7 @@ function Dashboard({ tokens, loading, progress, total, lastUpdated, onRefresh, o
                                                                 <span className="text-lg font-bold text-slate-100 group-hover:text-blue-400 transition-colors uppercase">
                                                                     {token.symbol || 'N/A'}
                                                                 </span>
-                                                                {isActiveComp && (
+                                                                {hasCompetition && (
                                                                     <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-black text-amber-500 tracking-tighter">
                                                                         GIẢI ĐẤU
                                                                     </span>
